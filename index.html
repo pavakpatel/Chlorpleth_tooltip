@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Choropleth with Tooltip</title>
+    </head>
+    <body>
+        <script src="https://d3js.org/d3.v5.min.js"></script>
+        <script src="//d3js.org/topojson.v3.min.js"></script>
+        <script type="text/javascript">
+            var svg = d3
+                .select("body")
+                .append("svg")
+                .attr("width", 1000)
+                .attr("height", 640);
+
+            var path = d3.geoPath();
+
+            var color = d3.scaleQuantize([1, 10], d3.schemeBlues[9]);
+
+            function format(d) {
+                return d + "%";
+            }
+
+            // Format tooltip
+            function callout(g, value) {
+                if (!value) return g.style("display", "none");
+
+                g.style("display", null)
+                    .style("pointer-events", "none")
+                    .style("font", "10px sans-serif");
+
+                var path = g
+                    .selectAll("path")
+                    .data([null])
+                    .join("path")
+                    .attr("fill", "white")
+                    .attr("stroke", "black");
+
+                var text = g
+                    .selectAll("text")
+                    .data([null])
+                    .join("text")
+                    .call(function(text) {
+                        text.selectAll("tspan")
+                            .data((value + "").split("/\n/"))
+                            .join("tspan")
+                            .attr("x", 0)
+                            .attr("y", function(d, i) {
+                                return i * 1.1 + "em";
+                            })
+                            .style("font-weight", function(_, i) {
+                                return i ? null : "bold";
+                            })
+                            .text(function(d) {
+                                return d;
+                            });
+                    });
+
+                var x = text.node().getBBox().x;
+                var y = text.node().getBBox().y;
+                var w = text.node().getBBox().width;
+                var h = text.node().getBBox().height;
+
+                text.attr(
+                    "transform",
+                    "translate(" + -w / 2 + "," + (15 - y) + ")"
+                );
+                path.attr(
+                    "d",
+                    "M" +
+                        (-w / 2 - 10) +
+                        ",5H-5l5,-5l5,5H" +
+                        (w / 2 + 10) +
+                        "v" +
+                        (h + 20) +
+                        "h-" +
+                        (w + 20) +
+                        "z"
+                );
+            }
+
+            // Draw
+            d3.json("counties-albers-10m.json").then(function(topo_data) {
+                var states = new Map(
+                    topo_data.objects.states.geometries.map(function(d) {
+                        return [d.id, d.properties];
+                    })
+                );
+
+                d3.csv("unemployment-x.csv")
+                    .then(function(data) {
+                        return new Map(
+                            data.map(function(d) {
+                                return [d.id, +d.rate];
+                            })
+                        );
+                    })
+                    .then(function(data) {
+                        svg.append("g")
+                            .attr("id", "map")
+                            .selectAll("path")
+                            .data(
+                                topojson.feature(
+                                    topo_data,
+                                    topo_data.objects.counties
+                                ).features
+                            )
+                            .join("path")
+                            .attr("class", "county")
+                            .attr("fill", function(d) {
+                                return color(data.get(d.id));
+                            })
+                            .attr("d", path);
+
+                        svg.select("#map")
+                            .append("path")
+                            .attr("fill", "none")
+                            .attr("stroke", "white")
+                            .attr(
+                                "d",
+                                path(
+                                    topojson.mesh(
+                                        topo_data,
+                                        topo_data.objects.states,
+                                        function(a, b) {
+                                            return a !== b;
+                                        }
+                                    )
+                                )
+                            );
+
+                        var tooltip = svg.append("g");
+
+                        // Create and customize tooltip
+                        svg.selectAll(".county")
+                            .on("mouseover", function(d) {
+                                tooltip.call(
+                                    callout,
+                                    format(data.get(d.id)) +
+                                        "/\n/" +
+                                        d.properties.name +
+                                        ", " +
+                                        states.get(d.id.slice(0, 2)).name
+                                );
+                                d3.select(this)
+                                    .attr("stroke", "red")
+                                    .raise();
+                            })
+                            .on("mousemove", function() {
+                                tooltip.attr(
+                                    "transform",
+                                    "translate(" +
+                                        d3.mouse(this)[0] +
+                                        "," +
+                                        d3.mouse(this)[1] +
+                                        ")"
+                                );
+                            })
+                            .on("mouseout", function() {
+                                tooltip.call(callout, null);
+                                d3.select(this)
+                                    .attr("stroke", null)
+                                    .lower();
+                            });
+                    });
+            });
+        </script>
+    </body>
+</html>
